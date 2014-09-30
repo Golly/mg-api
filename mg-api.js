@@ -1,38 +1,78 @@
+/**
+ * mgApi - The authentication suite for AngularJS
+ * @version v0.1.0 - 2014-09-29
+ * @link http://marting.github.com
+ * @license MIT License, http://www.opensource.org/licenses/MIT
+ */
 (function(window, angular, _, undefined) {
     'use strict';
 
     angular.module('mgApi', []);
 
+    /**
+     * @ngdoc service
+     * @name mgApi
+     * @requires mgAuthNotifier, mgRequestStorage
+     *
+     * @description
+     * Create resource, collection or add transform function for resource
+     *
+     *
+     * Requires the {@link mgApi `mgApi`} module to be installed.
+     *
+     * @example
+     *
+     * ```js
+     * module.config(['$httpProvider', function($httpProvider){
+     *  $httpProvider.responseInterceptors.push('mgError401');
+     * }]);
+     * ```
+     */
     angular
         .module('mgApi')
         .factory('mgApi' , mgApi);
 
     mgApi.$inject = ['$http', '$q', '$injector', '$timeout', 'mgResource'];
     function mgApi($http, $q, $injector, $timeout, mgResource){
+        var baseUrl;
         var transformFn = {};
 
         var service = {
+            setBaseUrl: setBaseUrl,
             resource: resource,
+            collection: collection,
+            client: client,
             transform: transform
         };
 
         return service;
         ///////////////////
 
-        function resource(name, data, parent)
-        {
-            if (data == null) data = null;
-            if (parent == null) parent = null;
+        function setBaseUrl(url){
+            baseUrl = url;
+        }
+
+        function resource(name, data, parent) {
+            data = data || null;
+            parent = parent || null;
 
             return _applyTransform(mgResource.getResource(name, data, parent));
         }
 
-        function transform(name, transformFn)
-        {
+        function collection(){
+
+        }
+
+        function client(){
+
+        }
+
+        function transform(name, fn) {
             if (transformFn[name] == null) {
                 transformFn[name] = [];
             }
-            return transformFn[name].push(transformFn);
+
+            return transformFn[name].push(fn);
         }
 
         /**
@@ -43,6 +83,7 @@
 
             parent = resource.parent;
             result = [resource];
+
             while (parent) {
                 result.unshift(parent);
                 parent = parent.parent;
@@ -54,9 +95,9 @@
          * Apply transform function on Resource or Collection
          */
         function _applyTransform(resource){
-            var fn, name, ref;
+            var fn, ref;
+            var name = _.compact(_.pluck(_tree(resource), 'name')).join('.'); //joined hierarchy string
 
-            name = _.compact(_.pluck(_tree(resource), 'name')).join('.'); //joined hierarchy string
             if (transformFn[name]) { //if exist transform function for resource then apply
                 ref = transformFn[name];
                 for (var i = 0; i < ref.length; i++) {
@@ -70,6 +111,25 @@
 
     }
 
+    /**
+     * @ngdoc service
+     * @name mgUrl
+     * @requires $window
+     *
+     * @description
+     * Helper service for work with url string
+     *
+     *
+     * Requires the {@link mgApi `mgApi`} module to be installed.
+     *
+     * @example
+     *
+     * ```js
+     * module.config(['$httpProvider', function($httpProvider){
+     *  $httpProvider.responseInterceptors.push('mgError401');
+     * }]);
+     * ```
+     */
     angular
         .module('mgApi')
         .factory('mgUrl' , mgUrl);
@@ -143,18 +203,35 @@
         }
     }
 
+    /**
+     * @ngdoc service
+     * @name mgClient
+     * @requires $http
+     *
+     * @description
+     * Service for http communication
+     *
+     *
+     * Requires the {@link mgApi `mgApi`} module to be installed.
+     *
+     * @example
+     *
+     * ```js
+     * module.config(['$httpProvider', function($httpProvider){
+     *  $httpProvider.responseInterceptors.push('mgError401');
+     * }]);
+     * ```
+     */
     angular
         .module('mgApi')
         .factory('mgClient' , mgClient);
 
-    mgClient.$inject = ['$http', '$injector'];
-    function mgClient($http, $injector){
+    mgClient.$inject = ['$http'];
+    function mgClient($http){
         var interceptors = [];
 
         var service = {
-            error: error,
             request: request,
-            makeRequest: makeRequest,
             get: get,
             post: post,
             put: put,
@@ -164,39 +241,21 @@
         return service;
         ///////////////////
 
-        function error(){
-            return angular.noop;
-        }
-
         function request(method, url, config){
             var key, value, ref;
 
             config = config || {};
 
             if (method === 'post' || method === 'put') {
-                url = url.replace(/\?.+$/, '');
-                ref = config.data;
-                for (key in ref) {
-                    value = ref[key];
-                    if (key.match(/^(\$|_)/)) {
-                        delete config.data[key];
-                    }
-                }
+                url = _removeQueryString(url);
+                config.data = _removeReservedProperties(config.data);
             }
 
             config.method = method;
             config.url = url;
             config.headers = {};
 
-            _intercept('request', config);
-
-            return makeRequest(config, err);
-        }
-
-        function makeRequest(config){
-            return $http(config).then(function(response){
-                return response.data;
-            });
+            return _makeRequest(config);
         }
 
         function get(url, params) {
@@ -221,29 +280,35 @@
             return request('delete', url, null);
         }
 
-        function _intercept(type, data) {
-            var results = [];
-            var interceptor;
+        function _makeRequest(config){
+            return $http(config).then(function(response){
+                return response.data;
+            });
+        }
 
-            for(var i = 0; i < interceptors.length; i++ ){
-                interceptor = $injector.invoke(interceptors[i]);
-                if (interceptor[type]) {
-                    results.push(interceptor[type](data));
-                } else {
-                    results.push(void 0);
+        function _removeQueryString(url){
+            return url.replace(/\?.+$/, '');
+        }
+
+        function _removeReservedProperties(data){
+            for (var key in data) {
+                if (key.match(/^(\$|_)/)) {
+                    delete data[key];
                 }
             }
 
-            return results;
+            return data;
         }
+
     }
+
 
     angular
         .module('mgApi')
         .factory('mgResource' , mgResource);
 
-    mgApi.$inject = ['$http', '$q', 'mgUrl'];
-    function mgResource($http, $q, mgUrl) {
+    mgApi.$inject = ['$q', 'mgUrl', 'mgClient'];
+    function mgResource( $q, mgUrl, mgClient) {
 
         var service = {
             getResource: getResource
@@ -258,18 +323,18 @@
             this.urls = {
                 base: angular.isString(data) || angular.isNumber(data) ? data : this.name
             };
-            if (data != null) this.set(data);
+            if (data != null) this.setLinks(data);
             this.loaders = {};
         }
 
-        Resource.prototype.set = function(data) {
-            var link, name, ref;
+        Resource.prototype.setLinks = function(data) {
+            var link, name, links;
 
             if (angular.isObject(data) && (data._links != null)) {
-                ref = data._links;
+                links = data._links;
 
-                for (name in ref) {
-                    link = ref[name];
+                for (name in links) {
+                    link = links[name];
                     if (link.href != null) {
                         this.urls[name] = link.href;
                     }
@@ -323,49 +388,47 @@
         };
         */
 
-        //
-        Resource.prototype.get = function(params, err) {
+        Resource.prototype.get = function(params) {
             var _this = this;
 
-            return Client.get(this.url(), params, err).then(function(data) {
-                return _this.set(data);
+            return mgClient.get(this.url(), params).then(function(data) {
+                return _this.setLinks(data);
             });
         };
 
-        Resource.prototype.post = function(data, err) {
+        Resource.prototype.post = function(data) {
             var _this = this;
 
-            return Client.post(this.url(), data, err).then(function(data) {
-                return _this.set(data);
+            return mgClient.post(this.url(), data).then(function(data) {
+                return _this.setLinks(data);
             });
         };
 
-        Resource.prototype.put = function(data, err) {
+        Resource.prototype.put = function(data) {
             var _this = this;
 
-            return Client.put(this.url(), data, err).then(function(data) {
-                return _this.set(data);
+            return mgClient.put(this.url(), data).then(function(data) {
+                return _this.setLinks(data);
             });
         };
 
-        Resource.prototype.remove = function(err) {
-            return Client["delete"](this.url(), err);
-        };
-        //
-
-        Resource.prototype.create = function(data, err) {
-            return this.post(data, err);
+        Resource.prototype.remove = function() {
+            return mgClient["delete"](this.url());
         };
 
-        Resource.prototype.update = function(data, err) {
-            return this.put(data, err);
+        Resource.prototype.create = function(data) {
+            return this.post(data);
         };
 
-        Resource.prototype.save = function(data, err) {
+        Resource.prototype.update = function(data) {
+            return this.put(data);
+        };
+
+        Resource.prototype.save = function(data) {
             if (this.urls.self) {
-                return this.update(data, err);
+                return this.update(data);
             } else {
-                return this.create(data, err);
+                return this.create(data);
             }
         };
 
