@@ -309,13 +309,38 @@
 
     mgApi.$inject = ['$q', 'mgUrl', 'mgClient'];
     function mgResource( $q, mgUrl, mgClient) {
+        var resourceName;
+        var resourceParent;
+        var urls = {};
+        var loaders = {};
 
         var service = {
-            getResource: getResource
+            //getResource: getResource
+            get:get,
+            post: post
         };
 
-        return service;
+        return function(name, data, parent) {
+            resourceName = name;
+            resourceParent = parent || null;
+            urls.base = angular.isString(data) || angular.isNumber(data) ? data : name;
+            if (data != null) _setLinks(data);
+
+            return service;
+        }
         ///////////////////
+
+        function get(){
+
+        }
+
+        function post(){
+
+        }
+
+        function _setLinks(){
+
+        }
 
         function Resource(name, data, parent) {
             this.name = name;
